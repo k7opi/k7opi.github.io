@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=0">
+    <meta name="renderer" content="webkit">
+    <meta name="author" content="mengkun">
+    <meta name="generator" content="KodCloud">
+    <meta http-equiv="Cache-Control" content="no-siteapp">
+    
+    <!-- 强制移动设备以app模式打开页面(即在移动设备下全屏，仅支持部分浏览器) -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-touch-fullscreen" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="full-screen" content="yes"><!--UC强制全屏-->
+    <meta name="browsermode" content="application"><!--UC应用模式-->
+    <meta name="x5-fullscreen" content="true"><!--QQ强制全屏-->
+    <meta name="x5-page-mode" content="app"><!--QQ应用模式-->
+    <title>注册</title>
+    <link rel="stylesheet" href="css/regstyle.css">
+    <script src="js/jquery.min.js"></script>
+    <!-- layer弹窗插件 -->
+    <script src="plugns/layer/layer.js"></script>
+</head>
+<body>
+    <div class="content">
+        <div class="login">
+            <div class="logo"></div>
+            <div id="web_login">
+                <div id="error_tips" style="display: none">
+                    <div id="error_tips_content">
+                        <span id="error_icon"></span>
+                        <span id="error_message"></span>
+                    </div>
+                </div>
+                <form action="users/registerpost" method="POST" id="form1" name="form1" >
+                    <ul class="glist">
+                        <li class="gu">
+                            <input id="u" class="inputstyle" name="username" autocomplete="off" placeholder="请输入用户名(至少5位)">
+                        </li>
+                        <li class="gu">
+                            <input id="p1" class="inputstyle" maxlength="16" type="password" name="password1" autocorrect="off" placeholder="请输入你的密码(至少6位)">
+                        </li>
+                        <li class="gu">
+                            <input id="p2" class="inputstyle" maxlength="16" type="password" name="password2" autocorrect="off" placeholder="请确认你的密码(至少6位)">
+                        </li>
+                        <li class="gu">
+                            <input id="p3" class="inputstyle" maxlength="32" name="mail" autocorrect="off" placeholder="请输入邮箱" >
+                            <button id="verbtn" type="button" onclick="getmailcode()"/>发送验证码</button>
+                        </li>
+                        <li class="gp">
+                            <input id="p4" class="inputstyle" maxlength="16" name="code" autocorrect="off" placeholder="请输入验证码">
+                        </li>
+                        <div style="clear: both;"></div>
+                    </ul>
+                    <input id="go" type="button" value="注 册" onclick="checkForm()">
+                </form>
+            </div>
+        </div>
+</body>
+<script>
+    var rem = {codestatus:true}
+    var count = 59;
+    var u = document.getElementById("u");
+    var p1 = document.getElementById("p1");
+    var p2 = document.getElementById("p2");
+    var p3 = document.getElementById("p3");
+    var p4 = document.getElementById("p4");
+    var error = document.getElementById("error_tips");
+    var errorMessage = document.getElementById("error_message");
+    const BASEURL = "https://www.gameclub.ltd/api";
+    function checkForm(){
+        if(u.value=="")
+        {
+            return errortip("你还没有输入账号！");
+        }else
+        if(p1.value=="")
+        {
+            return errortip("你还没有输入密码！");
+        }else
+        if(p2.value=="")
+        {
+            return errortip("请再次确认密码！");
+        }else
+        if(!testemail(p3.value))
+        {
+            return errortip("邮箱格式不正确！");
+        }else
+        if(p4.value=="")
+        {
+            return errortip("请输入验证码！");
+        }else
+        if(u.value.length < 5)
+        {
+            u.value = '';
+            return errortip("账号不能小于五位！");
+        }else
+        if(p1.value.length < 6)
+        {
+            p1.value = '';
+            p2.value = '';
+            return errortip("密码不能小于6位！");
+        }else
+        if(p1.value != p2.value)
+        {
+            p1.value = '';
+            p2.value = '';
+            return errortip("两次输入密码不一致！");
+        }
+        else{
+            posttext();
+            return true;
+        }
+    }
+    //发送验证码
+    function getmailcode(){
+        if(!rem.codestatus){
+            return;
+        }
+        if(!testemail(p3.value))
+        {
+            return errortip("邮箱格式不正确！");
+        }
+        isloading();    //加载中动画
+        $.ajax({
+            type: "POST", 
+            url: BASEURL + '/users/getMailCode',
+            data: {
+                mail:p3.value
+            },
+            timeout: 15000,
+            complete: function(XMLHttpRequest, textStatus) {
+                closeload();    //关闭加载中动画
+                rem.codestatus = false
+            },
+            success: function(jsonData){
+                
+                if(jsonData.code == 1){
+                    //成功
+                    layer.msg(jsonData.status);
+                    return true;
+                }else if(jsonData.code == 0){
+                    layer.msg(jsonData.status);
+                    return false;
+                }
+            }   //success
+        });//ajax
+        count = 60;
+        loop();
+    }
+
+    //提交注册表单
+    function posttext(){
+        isloading();    //加载中动画
+        $.ajax({
+            type: "POST", 
+            url: BASEURL + '/users/registerpost',
+            data: {
+                username:u.value,
+                password1:p1.value,
+                mail:p3.value,
+                code:p4.value
+            },
+            timeout: 15000,
+            complete: function(XMLHttpRequest, textStatus) {
+                closeload();    //关闭加载中动画
+            },
+            success: function(jsonData){
+                if(jsonData.code == 1){
+                    //成功
+                    layer.alert(jsonData.status,function(){
+                        window.location.replace('https://music.gameclub.ltd') 
+                    });
+                    return true;
+                }else if(jsonData.code == 0){
+                    u.value = ''
+                    p1.value = ''
+                    p2.value = ''
+                    p3.value = ''
+                    p4.value = '';
+                    return errortip(jsonData.status);
+                }
+            }   //success
+        });//ajax
+    }
+
+    function loop(){
+        if(count === 0){
+            $('#verbtn').html("发送验证码")
+            rem.codestatus = true
+        }else{
+            count--;
+            $('#verbtn').html("重新发送(" + count + ")")
+        }
+        setTimeout(loop, 1000);
+    }
+    //加载圆圈动画
+    function isloading(){
+        rem.isload = layer.load(1, {
+            shade: [0.1,'transparent'] //0.1透明度的白色背景
+        });
+    }
+    //关闭加载圆圈动画
+    function closeload(){
+        layer.close(rem.isload);
+        rem.isload = null;
+    }
+    //对电子邮件的验证
+    function testemail(mail){
+        var myreg = /^([a-zA-Z0-9]+[_|\_|\.]?)*[a-zA-Z0-9]+@([a-zA-Z0-9]+[_|\_|\.]?)*[a-zA-Z0-9]+\.[a-zA-Z]{2,3}$/;
+        if(!myreg.test(mail))
+        {
+            return false;
+        }else{
+            return true;
+        }
+    }
+    //弹出错误提示
+    function errortip(text){
+        errorMessage.innerHTML=text;
+        error.style="display: block";
+        setTimeout(back,2500);
+        return false;
+    }
+    function back(){
+        var error = document.getElementById("error_tips");
+        error.style="display: none";
+    }
+</script>
+</html>
