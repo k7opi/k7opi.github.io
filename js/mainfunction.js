@@ -22,7 +22,7 @@
         coverbg: true,      //电脑端封面背景模糊效果
         mcoverbg: false      //手机端封面背景模糊效果
     };
-    const BASEURL = "https://www.gameclub.ltd/api";
+    const BASEURL = "https://test-1g6doeyxd3781b9d-1300751866.ap-guangzhou.app.tcloudbase.com/api";
     var rem = [];
     var mymusiclist = {};
     var islogin = false;
