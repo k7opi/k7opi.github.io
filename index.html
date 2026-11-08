@@ -28,26 +28,26 @@
     <![endif]--> 
 
     <!-- jQuery文件 -->
-    <script src="./js/jquery.min.js"></script>
+    <script src="js/jquery.min.js"></script>
 
     <!-- layer弹窗插件 -->
-    <script src="./plugns/layer/layer.js"></script>
+    <script src="plugns/layer/layer.js"></script>
     
     <!-- 播放器样式表文件 -->
-    <link rel="stylesheet" type="text/css" href="./css/player.css">
+    <link rel="stylesheet" type="text/css" href="css/player.css">
     
     <!-- 小屏幕样式修复 -->
-    <link rel="stylesheet" type="text/css" href="./css/small.css">
+    <link rel="stylesheet" type="text/css" href="css/small.css">
     
     <!-- 滚动条美化样式文件 -->
-    <link rel="stylesheet" type="text/css" href="./css/jquery.mCustomScrollbar.min.css">
+    <link rel="stylesheet" type="text/css" href="css/jquery.mCustomScrollbar.min.css">
 
 
     <!-- 滚动条美化插件 -->
-    <script src="./js/jquery.mCustomScrollbar.concat.min.js"></script>
+    <script src="js/jquery.mCustomScrollbar.concat.min.js"></script>
 
     <!-- 背景模糊化插件 -->
-    <script src="./js/background-blur.min.js"></script>
+    <script src="js/background-blur.min.js"></script>
 </head>
 <body>
 <div id="blur-img"></div>
@@ -79,7 +79,7 @@
             <!--播放列表-->
             <div id="sheet" class="data-box" hidden="" style="overflow: visible;">
                 <div class="sheet-item" data-no="1">
-                    <img class="sheet-cover" src="./images/player_cover.png" onclick="jumplist()" draggable="false">
+                    <img class="sheet-cover" src="images/player_cover.png" onclick="jumplist()" draggable="false">
                     <p class="sheet-name">正在播放</p>
                 </div>
                 <div class="sheet-item" data-no="6" onclick="getMylist()">
@@ -112,7 +112,7 @@
         <div class="player" id="player">
             <!--歌曲封面-->
             <div class="cover">
-                <img src="./images/player_cover.png" class="music-cover" id="music-cover" draggable="false">
+                <img src="images/player_cover.png" class="music-cover" id="music-cover" draggable="false">
             </div>
             <!--滚动歌词-->
             <div class="lyric" style="overflow: visible;">
@@ -152,11 +152,7 @@
     </div>  <!--class="footer"-->
 
 <audio src=""></audio>
-<!-- 主要函数 -->
-<script src="./js/mainfunction.js"></script>
-<!-- 歌词 -->
-<script src="./js/lrc.js"></script>
-<!--我的歌单函数-->
-<script src="./js/mylist.js"></script>
+<!-- 播放器入口（ES Module，内部按模块拆分为 core / api / ui / features） -->
+<script type="module" src="./js/main.js"></script>
 </body>
 </html>
