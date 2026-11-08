@@ -899,3 +899,36 @@ body {
     margin-left: 10px;
     margin-bottom: 10px;
 }
+
+/**************************************************
+ * MV 播放弹窗
+ * layer 的高度是按窗口算的，视频却是按宽度撑成 16:9，
+ * 两者对不上就会出现「弹窗很矮、画面被裁切」。尺寸由 JS 算准了通过 area 传入
+ * （见 player.js 的 mvDialogSize），CSS 只负责让视频铺满内容区。
+ *************************************************/
+/* layer 的 .layui-layer 没设 box-sizing，默认 content-box，
+   area 给的高度不含边框，不统一成 border-box 会在窗口较矮时溢出视口 */
+.mv-dialog {
+    box-sizing: border-box;
+}
+.mv-dialog .layui-layer-title {
+    height: 38px;
+    line-height: 38px;
+    font-size: 14px;
+    padding-right: 60px;
+}
+/* 去掉 layer 默认的 20px 内边距，内容区高度 = 弹窗高度 - 标题 */
+.mv-dialog .layui-layer-content {
+    height: calc(100% - 38px) !important;
+    padding: 0 !important;
+    overflow: hidden;
+    background: #000;
+}
+/* 视频填满内容区，非 16:9 的源用 contain 居中留黑边 */
+.mv-dialog .layui-layer-content video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+}

@@ -4,11 +4,9 @@ import { state, resetPlaylist, playlist } from '../core/state.js';
 import { isloading, closeload } from '../core/loading.js';
 import { on, EVENTS } from '../core/events.js';
 import { searchMusic, loadChart } from '../api/song.js';
+import { createSignal, isAbort } from '../api/request.js';
 import { addItem, addListhead, addListbar, removeListfoot } from '../ui/list-render.js';
 import { jumplist } from './layout.js';
-
-// 每页条数，与后端保持一致
-var PAGE_SIZE = 30;
 
 // 音乐源选项，顺序即弹窗中的显示顺序
 var SOURCES = [
@@ -89,10 +87,10 @@ function toSong(item) {
 }
 
 // 搜索成功后渲染整张列表
-function renderSearchResult(res) {
+function renderSearchResult(data) {
 	resetPlaylist();
 	state.listMode = 'sheet';
-	var songs = res.songinfo || [];
+	var songs = data.list || [];
 	for (var j = 0; j < songs.length; j++) {
 		playlist.push(toSong(songs[j]));
 	}
@@ -101,7 +99,16 @@ function renderSearchResult(res) {
 	for (var i = 0; i < playlist.length; i++) {
 		addItem(i, playlist[i].name, playlist[i].artist, playlist[i].album, playlist[i].mvid);
 	}
-	return res;
+	return data;
+}
+
+// 当前生效的搜索/榜单取消令牌，新请求发起前取消旧的，避免旧响应覆盖新列表
+var activeSignal = null;
+
+function beginRequest() {
+	if (activeSignal) activeSignal.cancel();
+	activeSignal = createSignal();
+	return activeSignal;
 }
 
 // 获取搜索音乐结果
@@ -115,27 +122,25 @@ export function ajaxSearch(wd, type) {
 	state.source = type;
 	state.searchSource = type;  // 弹窗回显用，与 source 保持一致
 	isloading();
-	return searchMusic(type, wd, state.page)
-		.then(function (res) {
-			if (!res || res.code == -1) {
+	var signal = beginRequest();
+	return searchMusic(type, wd, state.page, { signal: signal })
+		.then(function (data) {
+			renderSearchResult(data);
+			// 是否有下一页由后端算好，前端不再乘每页条数
+			addListbar(data.hasMore ? 'more' : 'nomore');
+			layer.msg('搜索成功！');
+			state.page++; // 页数加一
+		})
+		.catch(function (err) {
+			if (isAbort(err)) return;
+			console.error('[search] error:', err);
+			if (err && err.code === 4004) {
 				addListhead();
 				addListbar('nodata');
 				layer.msg('无搜索结果');
 				return;
 			}
-			renderSearchResult(res);
-			var total = res.total !== undefined ? res.total : res.totol;
-			if (total > state.page * PAGE_SIZE) {
-				addListbar('more');
-			} else {
-				addListbar('nomore');
-			}
-			layer.msg('搜索成功！');
-			state.page++; // 页数加一
-		})
-		.catch(function (err) {
-			console.error('[search] error:', err);
-			layer.msg('搜索失败，请稍后重试');
+			layer.msg((err && err.message) || '搜索失败，请稍后重试');
 		})
 		.then(function () {
 			closeload();
@@ -148,31 +153,33 @@ export function ajaxMore() {
 	removeListfoot();   // 清除列表尾
 	var tap = playlist.length;
 	isloading();
-	return searchMusic(state.source, state.keyword, state.page)
-		.then(function (res) {
-			if (!res || res.code == -1) {
+	var signal = beginRequest();
+	return searchMusic(state.source, state.keyword, state.page, { signal: signal })
+		.then(function (data) {
+			var songs = data.list || [];
+			if (!songs.length) {
 				layer.msg('没有更多了！');
 				return;
 			}
-			var songs = res.songinfo || [];
 			for (var j = 0; j < songs.length; j++) {
 				playlist.push(toSong(songs[j]));
 			}
 			for (var i = tap; i < playlist.length; i++) {
 				addItem(i, playlist[i].name, playlist[i].artist, playlist[i].album, playlist[i].mvid);
 			}
-			var total = res.total !== undefined ? res.total : res.totol;
-			if (total > state.page * PAGE_SIZE) {
-				addListbar('more');
-			} else {
-				addListbar('nomore');
-			}
+			addListbar(data.hasMore ? 'more' : 'nomore');
 			layer.msg('加载成功！');
 			state.page++; // 页数加一
 		})
 		.catch(function (err) {
+			if (isAbort(err)) return;
 			console.error('[search] more error:', err);
-			layer.msg('加载失败，请稍后重试');
+			if (err && err.code === 4004) {
+				addListbar('nomore');
+				layer.msg('没有更多了！');
+				return;
+			}
+			layer.msg((err && err.message) || '加载失败，请稍后重试');
 		})
 		.then(function () {
 			closeload();
@@ -185,19 +192,19 @@ export function ajaxList(listdata) {
 	var type = listdata && listdata.bangid;
 	if (!type) return Promise.resolve();
 	isloading();
-	return loadChart(type)
-		.then(function (res) {
-			if (!res || res.code == -1) {
-				layer.msg('无结果');
-				if (state.mainList) state.mainList.append('<div class="list-item text-center" id="list-foot">可能是个假列表，什么也没有</div>');
-				return;
-			}
-			renderSearchResult(res);
-			layer.msg('搜索成功！');
+	var signal = beginRequest();
+	return loadChart(type, { signal: signal })
+		.then(function (data) {
+			renderSearchResult(data);
+			addListbar('nomore');   // 榜单不支持翻页
+			layer.msg('加载成功！');
 		})
 		.catch(function (err) {
+			if (isAbort(err)) return;
 			console.error('[chart] error:', err);
-			layer.msg('榜单加载失败');
+			addListhead();
+			addListbar('nodata');
+			layer.msg((err && err.message) || '榜单加载失败');
 		})
 		.then(function () {
 			closeload();

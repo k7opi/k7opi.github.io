@@ -3,7 +3,8 @@
 /* global $ */
 import { state, playlist } from '../core/state.js';
 import { escapeHtml } from '../core/utils.js';
-import { getLyricRaw } from '../api/song.js';
+import { getLyric } from '../api/song.js';
+import { createSignal, isAbort } from '../api/request.js';
 
 var lyricArea = null;
 
@@ -17,35 +18,6 @@ function area() {
 // 在歌词区显示提示语（如歌词加载中、无歌词等）
 export function lyricTip(str) {
 	area().html("<li class='lyric-tip'>" + escapeHtml(str) + '</li>');
-}
-
-// 解析 LRC 文本
-// 这一函数来自 https://github.com/TivonJJ/html5-music-player
-export function parseLyric(lrc) {
-	if (!lrc) return '';
-	var lyrics = lrc.split('\n');
-	var lrcObj = {};
-	for (var i = 0; i < lyrics.length; i++) {
-		var lyric = lyrics[i];
-		// LRC 里出现裸 % 时 decodeURIComponent 会抛 URIError，逐行兜底
-		try {
-			lyric = decodeURIComponent(lyric);
-		} catch (e) {
-			// 保持原文
-		}
-		var timeReg = /\[\d*:\d*((\.|\:)\d*)*\]/g;
-		var timeRegExpArr = lyric.match(timeReg);
-		if (!timeRegExpArr) continue;
-		var clause = lyric.replace(timeReg, '');
-		for (var k = 0, h = timeRegExpArr.length; k < h; k++) {
-			var t = timeRegExpArr[k];
-			var min = Number(String(t.match(/\[\d*/i)).slice(1)),
-				sec = Number(String(t.match(/\:\d*/i)).slice(1));
-			var time = min * 60 + sec;
-			lrcObj[time] = clause;
-		}
-	}
-	return lrcObj;
 }
 
 // 歌曲加载完后的回调函数
@@ -75,49 +47,49 @@ function lyricCallback(id) {
 
 // 解析并获取歌词
 // 参数：歌曲在 playlist 中的索引
+// 后端已把三个源的歌词统一解析成 lines: [{ time: 秒, text }]，
+// 这里只需转成 { 秒: 文本 } 供滚动高亮使用，不再按源分支、不再 JSON.parse 猜测
+var activeLyricSignal = null;
+
 export function getlrc(id) {
 	var song = playlist[id];
 	if (!song) return;
 	var mid = song.musicrid;
 	var source = song.source;
-	if (source !== 'kuwo' && source !== 'netease' && source !== 'qq') return;
 
-	getLyricRaw(source, mid)
-		.then(function (raw) {
-			area().html('');
-			if (!raw) {
-				lyricTip('歌词加载失败');
+	// 快速切歌时取消上一首的歌词请求，避免旧歌词盖到新歌上
+	if (activeLyricSignal) activeLyricSignal.cancel();
+	activeLyricSignal = createSignal();
+	var signal = activeLyricSignal;
+
+	getLyric(source, mid, { signal: signal })
+		.then(function (data) {
+			if (id !== state.playid) return;   // 过程中已切歌，丢弃
+			var lines = (data && data.lines) || [];
+			if (!lines.length) {
+				area().html('');
+				lyricTip('没有歌词');
 				return;
 			}
-			if (source === 'kuwo') {
-				// 酷我返回 [{time, lineLyric}] 的 JSON 文本
-				var list = null;
-				try {
-					list = JSON.parse(raw);
-				} catch (e) {
-					list = null;
-				}
-				if (!list || list.code == -1 || !list.length) {
-					lyricTip('歌词加载失败');
-					return;
-				}
-				var lrcobj = {};
-				for (var j = 0; j < list.length; j++) {
-					lrcobj[parseInt(list[j].time)] = list[j].lineLyric;
-				}
-				state.lyric = lrcobj;
-			} else {
-				// 网易云 / QQ 返回 LRC 原始文本，失败时返回 {"code":-1}
-				var text = String(raw);
-				if (text.indexOf('"code"') !== -1 && text.indexOf('-1') !== -1 && text.indexOf('[') === -1) {
-					lyricTip('歌词加载失败');
-					return;
-				}
-				state.lyric = parseLyric(text);
+			var lrcobj = {};
+			for (var j = 0; j < lines.length; j++) {
+				var line = lines[j];
+				var sec = parseInt(line.time, 10);
+				if (isNaN(sec)) continue;
+				// 同一秒可能有多行（如中英双语），拼接而不是覆盖
+				lrcobj[sec] = lrcobj[sec] ? lrcobj[sec] + ' / ' + line.text : line.text;
 			}
+			state.lyric = lrcobj;
 			lyricCallback(id);
 		})
 		.catch(function (err) {
+			if (isAbort(err)) return;
+			if (id !== state.playid) return;
+			area().html('');
+			if (err && err.code === 4004) {
+				lyricTip('没有歌词');
+				return;
+			}
 			console.error('[lyric] error:', err);
 			lyricTip('歌词加载失败');
 		});

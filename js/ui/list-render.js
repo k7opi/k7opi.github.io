@@ -54,9 +54,11 @@ export function refreshListMarker(index) {
 }
 
 // 列表中新增一项
-// 参数：编号、名字、歌手、专辑、mvid
+// 参数：编号（data-no，用于定位播放/删除）、名字、歌手、专辑、mvid
 // mode: 'sheet'（默认，带“添加到我的歌单”按钮）| 'mylist'（我的歌单，带删除按钮）
+// displayNo: 列表序号（从 0 开始），我的歌单分页追加时 data-no 与序号会错开，需单独传入
 export function addItem(no, name, auth, album, mvid, mode) {
+	var displayNo = arguments.length > 6 ? arguments[6] : no;
 	var html = '';
 	name = escapeHtml(name);
 	auth = escapeHtml(auth);
@@ -67,7 +69,7 @@ export function addItem(no, name, auth, album, mvid, mode) {
 		// 我的歌单：点击从歌单删除
 		if (mvid && !state.isMobile) {
 			html = '<div class="list-item" data-no="' + no + '">' +
-				'<span class="list-num">' + (no + 1) + '</span>' +
+				'<span class="list-num">' + (displayNo + 1) + '</span>' +
 				'<span class="list-mobile-menu"></span>' +
 				'<span class="music-album">' + album + '</span>' +
 				'<span class="auth-name">' + auth + '</span>' +
@@ -81,7 +83,7 @@ export function addItem(no, name, auth, album, mvid, mode) {
 			'</div>';
 		} else {
 			html = '<div class="list-item" data-no="' + no + '">' +
-				'<span class="list-num">' + (no + 1) + '</span>' +
+				'<span class="list-num">' + (displayNo + 1) + '</span>' +
 				'<span class="list-mobile-del"></span>' +
 				'<span class="list-mobile-menu"></span>' +
 				'<span class="music-album">' + album + '</span>' +
@@ -97,7 +99,7 @@ export function addItem(no, name, auth, album, mvid, mode) {
 		}
 	} else if (mvid && !state.isMobile) {
 		html = '<div class="list-item" data-no="' + no + '">' +
-			'<span class="list-num">' + (no + 1) + '</span>' +
+			'<span class="list-num">' + (displayNo + 1) + '</span>' +
 			'<span class="list-mobile-menu"></span>' +
 			'<span class="music-album">' + album + '</span>' +
 			'<span class="auth-name">' + auth + '</span>' +
@@ -111,7 +113,7 @@ export function addItem(no, name, auth, album, mvid, mode) {
 		'</div>';
 	} else {
 		html = '<div class="list-item" data-no="' + no + '">' +
-			'<span class="list-num">' + (no + 1) + '</span>' +
+			'<span class="list-num">' + (displayNo + 1) + '</span>' +
 			'<span class="list-mobile-love"></span>' +
 			'<span class="list-mobile-menu"></span>' +
 			'<span class="music-album">' + album + '</span>' +

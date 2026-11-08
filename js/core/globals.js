@@ -5,7 +5,7 @@ import { state, playlist } from './state.js';
 import { showabout, appcode, jumplist } from '../features/layout.js';
 import { searchSubmit, ajaxMore, ajaxList } from '../features/search.js';
 import { playList, playmv, audiocontrol, nextMusic, prevMusic, orderChange, thisDownload } from '../features/player.js';
-import { addMylist, getMylist, delMylist } from '../features/sheet.js';
+import { addMylist, getMylist, delMylist, ajaxMylistMore } from '../features/sheet.js';
 import { loginBox, reloadcapt, LoginAction, loginout } from '../features/auth.js';
 
 const GLOBALS = {
@@ -13,6 +13,7 @@ const GLOBALS = {
 	showabout,
 	jumplist,
 	getMylist,
+	ajaxMylistMore,
 	ajaxList,
 	prevMusic,
 	audiocontrol,

@@ -1,73 +1,65 @@
-// 歌曲相关接口：搜索、榜单、播放地址、歌词、MV
-// 集中维护 source -> 路由映射，避免各模块各写一份 switch
+// 歌曲相关接口：搜索、榜单、歌手、播放地址、歌词、MV
+// 所有音乐接口都在 /api/music/* 下，source 作为参数而不是路径的一部分；
+// request.js 已完成信封解包，这里返回的直接是 data 实体（不再是信封）。
 import { get } from './request.js';
 
-// 音乐源 -> 接口路径
-const SOURCE_ROUTES = {
-	kuwo: {
-		search: '/kuworesult',
-		url: '/kuwourl',
-		lrc: '/kuwolrc',
-		mv: '/kuwomv',
-		label: '酷我音乐'
-	},
-	netease: {
-		search: '/neteaseresult',
-		url: '/neteaseurl',
-		lrc: '/neteaselrc',
-		mv: '/neteasemv',
-		label: '网易云音乐'
-	},
-	qq: {
-		search: '/qqresult',
-		url: '/qqurl',
-		lrc: '/qqlrc',
-		mv: '/qqmv',
-		label: 'QQ音乐'
-	}
+// 音乐源 -> 显示名
+const SOURCE_LABELS = {
+	kuwo: '酷我音乐',
+	netease: '网易云音乐',
+	qq: 'QQ音乐'
 };
 
 // 音乐源显示名
 export function getsource(source) {
-	var route = SOURCE_ROUTES[source];
-	return route ? route.label : undefined;
+	return SOURCE_LABELS[source];
 }
 
-function routeOf(source, key) {
-	var route = SOURCE_ROUTES[source];
-	return route ? route[key] : '';
+// 是否为受支持的音源
+export function isSource(source) {
+	return Object.prototype.hasOwnProperty.call(SOURCE_LABELS, source);
 }
 
-// 搜索：返回 { songinfo, total, totol, page }，失败时返回 { code: -1 }
-export function searchMusic(source, keyword, page) {
-	return get(routeOf(source, 'search'), { keyword: keyword, page: page });
+// 搜索：返回 { source, keyword, page, pageSize, total, hasMore, list }
+export function searchMusic(source, keyword, page, opts) {
+	return get('/api/music/search', {
+		source: source,
+		keyword: keyword,
+		page: page
+	}, opts);
 }
 
-// 榜单：bangid 为 1/2/3/4，失败时返回 { code: -1 }
-export function loadChart(bangid) {
-	return get('/list', { type: bangid });
+// 榜单：bangid 为 1/2/3/4，返回 { type, total, hasMore, list }
+export function loadChart(bangid, opts) {
+	return get('/api/music/chart', { type: bangid }, opts);
 }
 
-// 歌手歌曲
-export function loadArtistSongs(artistid) {
-	return get('/list', { type: 10, singer: artistid });
+// 歌手歌曲：返回 { artistId, total, hasMore, list }
+export function loadArtistSongs(artistid, opts) {
+	return get('/api/music/artist', { id: artistid }, opts);
 }
 
-// 播放地址：返回字符串，失败为空串
-// 后端 res.send(url) 返回的是纯文本直链而非 JSON，必须按 text 解析，
-// 否则 jQuery 会以 parsererror 失败，前端表现为「获取播放地址失败」
-export function getPlayUrl(source, id) {
-	return get(routeOf(source, 'url'), { id: id }, { dataType: 'text' });
+// 播放地址：返回 { url, bitrate, format, isFragment, expireAt }
+export function getPlayUrl(source, id, opts) {
+	return get('/api/music/url', { source: source, id: id }, opts);
 }
 
-// 歌词：kuwo 返回数组，netease/qq 返回 LRC 文本，失败返回 { code: -1 }
-// 响应体类型三种源不一致（数组 JSON / LRC 纯文本 / {code:-1}），
-// 统一按 text 取回后在前端自行判定，避免 jQuery 对纯文本报 parsererror
-export function getLyricRaw(source, id) {
-	return get(routeOf(source, 'lrc'), { id: id }, { dataType: 'text' });
+// 歌词：返回 { format, count, lines: [{ time: Number, text: String }] }
+export function getLyric(source, id, opts) {
+	return get('/api/music/lyric', { source: source, id: id }, opts);
 }
 
-// MV：返回渲染好的 HTML 片段或提示文案
-export function getMvContent(source, mvid, name, artist) {
-	return get(routeOf(source, 'mv'), { id: mvid, name: name, artist: artist }, { dataType: 'html' });
+// MV：返回 { title, url, expireAt }，前端自行弹层播放
+export function getMvUrl(source, mvid, name, artist, opts) {
+	return get('/api/music/mv', {
+		source: source,
+		id: mvid,
+		name: name,
+		artist: artist
+	}, opts);
+}
+
+// 音源元数据：返回 { list: [{ source, label, supportsMv }] }
+export function getSources(opts) {
+	return get('/api/music/sources', null, opts);
 }

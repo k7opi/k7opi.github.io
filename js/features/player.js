@@ -2,11 +2,12 @@
 /* global $, layer */
 import { state, playlist, audio } from '../core/state.js';
 import { mkPlayer } from '../core/config.js';
-import { isMobile } from '../core/utils.js';
+import { isMobile, escapeHtml } from '../core/utils.js';
 import { playerSavedata, playerReaddata } from '../core/storage.js';
 import { isloading, closeload } from '../core/loading.js';
 import { on, emit, EVENTS } from '../core/events.js';
-import { getPlayUrl, getMvContent } from '../api/song.js';
+import { getPlayUrl, getMvUrl } from '../api/song.js';
+import { createSignal, isAbort } from '../api/request.js';
 import { Mkpgb, bars } from '../ui/progress-bar.js';
 import { getlrc, clearLyric, scrollLyric, refreshLyric } from './lyric.js';
 import { refreshListMarker } from '../ui/list-render.js';
@@ -27,10 +28,10 @@ export function playList(id) {
 	// 记录正在播放的歌曲在列表中的 id
 	state.playid = id;
 
-	// MV 播放期间用户切歌：只更新选中项，关闭 MV 后仍保持暂停
-	if (state.mvPlaying) {
-		state.paused = true;
-	}
+	// 进入新的播放流程：清掉暂停态，否则下面的 refreshListMarker 会因为
+	// state.paused 为真而跳过高亮（暂停中/MV 关闭后点播放按钮曾经就是这种情况）。
+	// MV 播放期间只是装载地址、不真正播放，由 getmusicurl 重新置回暂停
+	state.paused = false;
 
 	// ajax 获取播放链接
 	getmusicurl(id);
@@ -72,32 +73,58 @@ function audioErr() {
 }
 
 // 获取播放地址并播放
+// 返回值已解包：{ url, bitrate, format, isFragment, expireAt }
+var activeUrlSignal = null;
+
 export function getmusicurl(id) {
 	if (!playlist[id]) {
 		autoNextMusic();
 		return;
 	}
 	var song = playlist[id];
+	// 快速切歌时取消上一次取地址请求，避免旧地址覆盖新歌
+	if (activeUrlSignal) activeUrlSignal.cancel();
+	activeUrlSignal = createSignal();
+	var signal = activeUrlSignal;
+
 	isloading();
-	getPlayUrl(song.source, song.musicrid)
-		.then(function (url) {
+	getPlayUrl(song.source, song.musicrid, { signal: signal })
+		.then(function (data) {
+			if (id !== state.playid) return;   // 已切歌，丢弃
+			var url = data && data.url;
 			if (!url) {
-				closeload();
 				layer.msg('获取播放地址失败');
 				return;
 			}
+			// 记住地址与到期时间，供下载复用；过期后重新取
 			song.musicurl = url;
+			song.musicurlExpireAt = data.expireAt || 0;
 			audio.src = url;
 			changeCover(id);
+			// 只拿到试听片段：能播但时长不对，提示但不阻断
+			if (data.isFragment) layer.msg('该曲目仅提供试听片段，可能无法播放完整时长');
 			// MV 播放中切歌：只装载新地址，保持暂停，由用户手动开始播放
-			if (state.mvPlaying) return;
-			audio.play();
+			if (state.mvPlaying) {
+				state.paused = true;
+				$('.list-playing').removeClass('list-playing');
+				return;
+			}
 			state.paused = false;
 			$('.btn-play').addClass('btn-state-paused');
+			refreshListMarker(id);   // 地址就绪后再校正一次高亮
+			playAudio();
 		})
 		.catch(function (err) {
+			if (isAbort(err)) return;
 			console.error('[player] url error:', err);
-			layer.msg('获取播放地址失败');
+			// 没拿到地址就等于没播成，同步回滚高亮与播放按钮
+			if (id === state.playid) {
+				state.paused = true;
+				$('.btn-play').removeClass('btn-state-paused');
+				$('.list-playing').removeClass('list-playing');
+				stopTitflash();
+			}
+			layer.msg((err && err.message) || '获取播放地址失败');
 		})
 		.then(function () {
 			closeload();
@@ -124,10 +151,43 @@ function onMvClosed() {
 	state.mvPlaying = false;
 	audio.pause();
 	state.paused = true;
+	state.fadingOut = false;
 	$('.list-playing').removeClass('list-playing');
 	$('.btn-play').removeClass('btn-state-paused');
 	$('#music-progress .dot-move').removeClass('dot-move');
 	stopTitflash();
+}
+
+// MV 播放器 HTML（完全由前端构造，服务端只给直链）
+// 不要写 width/height 属性：宽度交给 CSS 撑满，高度按 16:9 自动计算，
+// 写成 height="100%" 会在内容区被固定高度时把视频撑破弹窗
+function mvHtml(url) {
+	return '<video id="mv-video" class="mv-video" ' +
+		'controls autoplay playsinline preload="none" ' +
+		'src="' + escapeHtml(url) + '"></video>';
+}
+
+// 弹窗尺寸
+// layer 的 area 高度是按「窗口高度」而不是「视频高度」算的，直接给 'auto' 会得到
+// 一个偏矮的框（视频按宽度撑成 16:9 后溢出被裁切）。这里在打开前自己算：
+//   宽 = min(80% 视口, 1100px)，移动端贴边；
+//   高 = 宽 * 9/16（16:9 画面）+ 标题 38 + 边框 12（border-box，含 rim 边框）。
+// 窗口过矮（小窗 / 横屏手机）时按高度反算宽度，保证画面完整可见。
+// 注：如果上游 MV 不是 16:9，多出来的部分由 CSS 用 object-fit: contain 居中留黑边。
+function mvDialogSize() {
+	var vw = window.innerWidth || document.documentElement.clientWidth;
+	var winH = window.innerHeight || document.documentElement.clientHeight;
+	var chrome = 50;   // 标题 38 + 上下边框 12
+	var videoW = Math.min(Math.round(vw * 0.8) - 12, 1088, vw - 24);
+	var height = Math.round(videoW * 9 / 16) + chrome;
+	if (height > winH) {
+		height = winH;
+		videoW = Math.min(videoW, Math.round((winH - chrome) * 16 / 9));
+	}
+	return {
+		width: (videoW + 12) + 'px',
+		height: height + 'px'
+	};
 }
 
 // 播放 MV
@@ -138,25 +198,38 @@ export function playmv(id) {
 		layer.msg('该歌曲无MV');
 		return;
 	}
-	getMvContent(song.source, song.mvid, song.name, song.artist)
-		.then(function (html) {
+	// 弹窗标题沿用前端拼装，不依赖服务端 title 字段
+	var title = song.artist ? song.name + ' - ' + song.artist : song.name;
+	getMvUrl(song.source, song.mvid, song.name, song.artist)
+		.then(function (data) {
+			if (!data || !data.url) {
+				layer.msg('MV 暂不可用');
+				return;
+			}
 			suspendForMv();
+			var size = mvDialogSize();
 			layer.open({
-				title: song.name + ' - ' + song.artist,
+				title: title,
 				type: 1,
-				skin: 'layui-layer-rim',
-				area: ['80%', 'auto'],
-				content: html,
+				skin: 'layui-layer-rim mv-dialog',
+				area: [size.width, size.height],
+				content: mvHtml(data.url),
 				end: onMvClosed     // 关闭弹窗（含右上角 ×、遮罩、ESC）都会走这里
 			});
 			setTimeout(function () {
-				var video = document.getElementsByTagName('video')[0];
-				if (video) video.play();
-			}, 1000);
+				var video = document.getElementById('mv-video');
+				if (video) {
+					var p = video.play();
+					if (p && typeof p.catch === 'function') {
+						// 浏览器自动播放策略拦截时静默处理，用户可手动点播放
+						p.catch(function () {});
+					}
+				}
+			}, 300);
 		})
 		.catch(function (err) {
 			console.error('[player] mv error:', err);
-			layer.msg('MV 加载失败');
+			layer.msg((err && err.message) || 'MV 加载失败');
 		});
 }
 
@@ -180,9 +253,12 @@ export function audioPause() {
 	// 先停掉递增，避免与递减同时跑导致音量抖动
 	clearInterval(state.interval_volume_up);
 	if (isMobile.iOS() != true) {
+		// 淡出期间标记为暂停态，timeupdate 不再推进进度条/歌词
+		state.fadingOut = true;
 		state.interval_volume_down = setInterval(VolumeDown, 30);
 	} else {
 		audio.pause();
+		state.fadingOut = false;
 	}
 }
 
@@ -208,6 +284,7 @@ export function audioPlay() {
 	// 先停掉可能残留的音量渐变定时器，避免恢复时音量被继续压低
 	clearInterval(state.interval_volume_down);
 	clearInterval(state.interval_volume_up);
+	state.fadingOut = false;
 
 	// 音量已被暂停流程淡到 0，恢复前先还原到设定值
 	var vol = bars.volume ? bars.volume.percent : mkPlayer.volume;
@@ -215,22 +292,27 @@ export function audioPlay() {
 
 	// 无论什么平台都必须真正调用 play()，
 	// 否则只切了按钮样式，音频不会开始（曾导致退出 MV 后点播放无反应）
-	var p = audio.play();
-	if (p && typeof p.catch === 'function') {
-		p.catch(function (err) {
-			// 浏览器自动播放策略限制（缺少用户手势）时给出提示并回滚状态
-			console.warn('[player] play rejected:', err && err.name);
-			state.paused = true;
-			$('.btn-play').removeClass('btn-state-paused');
-			$('.list-playing').removeClass('list-playing');
-			stopTitflash();
-			clearInterval(state.interval_volume_up);
-			layer.msg('播放失败，请再点击一次播放');
-		});
-	}
+	playAudio();
 	if (isMobile.iOS() != true) {
 		state.interval_volume_up = setInterval(VolumeUp, 30);
 	}
+}
+
+// 真正开始播放音频，并在浏览器拒绝播放（自动播放策略）时回滚状态
+// 回滚时必须清掉高亮：MV 关闭后 state.playid 已指向新歌，
+// 若只改 state.paused，从播放列表点的那首歌会一直显示为正在播放
+function playAudio() {
+	var p = audio.play();
+	if (!p || typeof p.then !== 'function') return;
+	p.catch(function (err) {
+		console.warn('[player] play rejected:', err && err.name);
+		state.paused = true;
+		$('.btn-play').removeClass('btn-state-paused');
+		$('.list-playing').removeClass('list-playing');
+		stopTitflash();
+		clearInterval(state.interval_volume_up);
+		layer.msg('播放失败，请再点击一次播放');
+	});
 }
 
 // 音量递减到 0 然后暂停
@@ -241,6 +323,7 @@ function VolumeDown() {
 	if (num <= 0) {
 		audio.volume = 0;
 		clearInterval(state.interval_volume_down);
+		state.fadingOut = false;
 		audio.pause();
 	} else {
 		audio.volume = num;
@@ -430,25 +513,36 @@ export function changeCover(id) {
 }
 
 // 下载歌曲
+// 播放地址有时效，已缓存但过期的地址不能直接下载，需要重新取
+function usableMusicUrl(song) {
+	if (!song.musicurl) return '';
+	if (song.musicurlExpireAt && song.musicurlExpireAt <= Date.now()) return '';
+	return song.musicurl;
+}
+
 export function thisDownload(id) {
 	var song = playlist[id];
 	if (!song) return;
-	if (song.musicurl) {
-		openDownloadDialog(song.musicurl, song.name + ' - ' + song.artist);
+	var cached = usableMusicUrl(song);
+	if (cached) {
+		openDownloadDialog(cached, song.name + ' - ' + song.artist);
 		return;
 	}
 	getPlayUrl(song.source, song.musicrid)
-		.then(function (url) {
+		.then(function (data) {
+			var url = data && data.url;
 			if (!url) {
 				layer.msg('无法获取下载链接！');
 				return;
 			}
 			song.musicurl = url;
+			song.musicurlExpireAt = data.expireAt || 0;
 			openDownloadDialog(url, song.name + ' - ' + song.artist);
 		})
 		.catch(function (err) {
+			if (isAbort(err)) return;
 			console.error('[player] download error:', err);
-			layer.msg('无法获取下载链接！');
+			layer.msg((err && err.message) || '无法获取下载链接！');
 		});
 }
 
@@ -478,5 +572,11 @@ export function init() {
 	});
 	on(EVENTS.TOGGLE, audiocontrol);
 	initProgress();
-	audio.onended = autoNextMusic;   // 自动播放下一首
+	// 自动播放下一首。暂停流程是「音量淡到 0 再 pause」，
+	// 若媒体已在后台播完，淡出结束时浏览器会派发 ended，
+	// 这里必须排除「用户主动暂停」与「MV 接管」两种情况，否则会莫名跳歌
+	audio.onended = function () {
+		if (state.paused === true || state.mvPlaying || state.fadingOut) return;
+		autoNextMusic();
+	};
 }

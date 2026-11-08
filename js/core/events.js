@@ -35,5 +35,6 @@ export const EVENTS = {
 	SHOW_SHEET: 'ui:sheet',         // 切到播放列表页并刷新登录态
 	ADD_MYLIST: 'mylist:add',       // 添加到我的歌单
 	DEL_MYLIST: 'mylist:del',       // 从我的歌单删除
+	AUTH_EXPIRED: 'auth:expired',   // 登录凭证过期/无效，需清 UI 并弹登录框
 	TRACK_CHANGE: 'trackchange'     // 当前曲目变更（歌词等模块监听）
 };

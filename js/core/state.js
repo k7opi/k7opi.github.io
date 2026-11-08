@@ -19,6 +19,7 @@ export const state = {
 	lastLyric: undefined,       // 上一次高亮的歌词时间点
 	errCount: 0,                // 连续播放失败的歌曲数
 	mvPlaying: false,           // 是否正在播放 MV（期间音乐被接管）
+	fadingOut: false,           // 是否处于暂停淡出中（此时不应触发自动下一首）
 	isload: null,               // layer.load 返回的句柄
 	titflash: undefined,        // 标题滚动定时器
 	interval_volume_up: undefined,

@@ -48,8 +48,14 @@ export function formatTime(time) {
 	return minute + ':' + second;
 }
 
-// 邮箱格式校验（注册页使用，规则与原有实现保持一致）
+// 邮箱格式校验（注册页使用）
+// 注意：本正则必须与后端 utils/validate.js 的 EMAIL_RE 完全一致，改动需两端同步。
+// 顶级域名支持 2-63 位（.online / .tech 之类不再被误判），域名标签不允许首尾为连字符。
+var EMAIL_RE = /^[A-Za-z0-9]+([._%+-][A-Za-z0-9]+)*@([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/;
+
 export function testEmail(mail) {
-	var reg = /^([a-zA-Z0-9]+[_|\_|\.]?)*[a-zA-Z0-9]+@([a-zA-Z0-9]+[_|\_|\.]?)*[a-zA-Z0-9]+\.[a-zA-Z]{2,3}$/;
-	return reg.test(mail);
+	if (typeof mail !== 'string') return false;
+	var str = mail.trim();
+	if (str === '' || str.length > 254) return false;
+	return EMAIL_RE.test(str);
 }

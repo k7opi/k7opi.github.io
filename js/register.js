@@ -4,6 +4,7 @@
 import { isloading, closeload } from './core/loading.js';
 import { testEmail } from './core/utils.js';
 import { sendMailCode, register } from './api/auth.js';
+import { CODE } from './api/request.js';
 import { msg, alert } from './ui/dialog.js';
 
 var count = 59;
@@ -27,6 +28,19 @@ function errortip(text) {
 	el.error.style.display = 'block';
 	setTimeout(back, 2500);
 	return false;
+}
+
+// 后端 4001 会带 data.field，据此定位到具体输入框
+var FIELD_EL = { username: 'u', password: 'p1', mail: 'p3', code: 'p4' };
+
+function focusField(field) {
+	var key = FIELD_EL[field];
+	if (!key || !el[key]) return;
+	try {
+		el[key].focus();
+	} catch (e) {
+		// 忽略 focus 异常
+	}
 }
 
 function back() {
@@ -76,16 +90,17 @@ function getmailcode() {
 	}
 	isloading();
 	sendMailCode(el.p3.value)
-		.then(function (jsonData) {
-			if (jsonData && jsonData.code == 1) {
-				msg(jsonData.status);
-				count = 60;
-				loop();
-			} else {
-				msg((jsonData && jsonData.status) || '发送失败');
-			}
+		.then(function () {
+			msg('验证码已发送');
+			count = 60;
+			loop();
 		})
 		.catch(function (err) {
+			if (err && err.kind === 'business') {
+				msg(err.message || '发送失败');
+				if (err.field === 'mail') focusField('mail');
+				return;
+			}
 			console.error('[register] mailcode error:', err);
 			msg('发送失败，请稍后重试');
 		})
@@ -104,21 +119,27 @@ function posttext() {
 		mail: el.p3.value,
 		code: el.p4.value
 	})
-		.then(function (jsonData) {
-			if (jsonData && jsonData.code == 1) {
-				alert(jsonData.status, function () {
-					window.location.replace('/');
-				});
-				return;
-			}
-			el.u.value = '';
-			el.p1.value = '';
-			el.p2.value = '';
-			el.p3.value = '';
-			el.p4.value = '';
-			errortip((jsonData && jsonData.status) || '注册失败');
+		.then(function () {
+			alert('注册成功！', function () {
+				window.location.replace('/');
+			});
 		})
 		.catch(function (err) {
+			if (err && err.kind === 'business') {
+				errortip(err.message || '注册失败');
+				// 4090 是用户名/邮箱已占用，只清这两项，保留邮箱验证码避免重发
+				if (err.code === CODE.CONFLICT) {
+					el.u.value = '';
+					el.u.focus();
+					return;
+				}
+				focusField(err.field);
+				// 邮箱验证码一次性使用，出错后需要重新获取
+				if (err.field === 'code') {
+					el.p4.value = '';
+				}
+				return;
+			}
 			console.error('[register] submit error:', err);
 			errortip('注册失败，请稍后重试');
 		})
