@@ -1,6 +1,6 @@
 // 全局配置常量
 // BASEURL 为空串，等价于原来的 "."：/ 与 /index.html 两种访问路径下都能正确请求接口
-export const BASEURL = 'https://musicapi.gameclub.ltd/';
+export const BASEURL = 'https://musicapi.gameclub.ltd';
 
 // 播放器默认参数
 export const mkPlayer = {
